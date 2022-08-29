@@ -26,6 +26,8 @@ class Node:
     In order to a node to be identified in the network simulation, is needed to have an `address`
     """
 
+    crashed : False
+
     def __init__(self,
                  env,
                  network: Network,
@@ -47,6 +49,11 @@ class Node:
         key = f'forks_{address}'
         self.env.data[key] = 0
 
+    def run(self):
+        print(
+            f'{self.address} at {time(self.env)}: is running')
+        
+
     def connect(self, nodes: list):
         """Simulate an acknowledgement phase with given nodes. During simulation the nodes
         will have an active session."""
@@ -64,7 +71,9 @@ class Node:
                 self.active_sessions[node.address] = {
                     'connection': connection,
                     'knownTxs': {''},
-                    'knownBlocks': {''}
+                    'knownBlocks': {''},
+                    'knownLeader': {''},
+                    'knownNewBlocks': {''}
                 }
                 self.connecting = self.env.process(
                     self._connecting(node, connection))
@@ -148,9 +157,17 @@ class Node:
             self._read_envelope(envelope)
 
     def send(self, destination_address: str, msg):
+        #print(
+        #    f'{self.address} at {time(self.env)}: Message (ID: {msg["id"]}) prepared to send to {destination_address}')
+        
         if self.address == destination_address:
             return
-        node = self.active_sessions[destination_address]
+        try:
+            node = self.active_sessions[destination_address]
+        except KeyError:
+            self.connect([self.network.get_node(destination_address)])
+            yield self.connecting  # Wait for all connections
+            node = self.active_sessions[destination_address]
         active_connection = node['connection']
         origin_node = active_connection.origin_node
         destination_node = active_connection.destination_node
@@ -160,6 +177,7 @@ class Node:
         if msg['id'] == 'block_headers':
             for header in msg['block_headers']:
                 delay = self.consensus.validate_block()
+                #print('delay', delay)
                 yield self.env.timeout(delay)
         # For Bitcoin it performs validation when receives the full block:
         if msg['id'] == 'block':
@@ -179,7 +197,7 @@ class Node:
         upload_transmission_delay = get_sent_delay(
             self.env, msg['size'], origin_node.location, destination_node.location)
         yield self.env.timeout(upload_transmission_delay)
-
+        
         envelope = Envelope(msg, time(self.env), destination_node, origin_node)
         active_connection.put(envelope)
 
@@ -211,3 +229,29 @@ class Node:
             envelope = Envelope(msg, time(self.env),
                                 destination_node, origin_node)
             connection.put(envelope)
+
+
+    ##              ##
+    ## Faults       ##
+    ##              ##
+
+    def crash(self):
+        if self.crashed is False:
+            self.crashed = True
+            print(
+                f'{self.address} at {time(self.env)}: {self.address} crash!')
+
+    
+    def up(self):
+        if self.crashed is True:
+            print(
+                f'{self.address} at {time(self.env)}: {self.address} up!')
+            self.crashed = False
+       
+    def notify_crash(self, p: str):
+        print(
+           f'{self.address} at {time(self.env)}: {p} was detected as suspect (crash)!')
+
+    def notify_up(self, p: str):
+        print(
+           f'{self.address} at {time(self.env)}: {p} was detected as correct!')

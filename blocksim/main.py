@@ -1,16 +1,18 @@
 import time
 import os
+import sys
 from json import dumps as dump_json
+from blocksim.models.node import Node
 from blocksim.world import SimulationWorld
 from blocksim.node_factory import NodeFactory
 from blocksim.transaction_factory import TransactionFactory
 from blocksim.models.network import Network
 
-
-def write_report(world):
-    path = 'output/report.json'
-    if not os.path.exists(path):
-        os.mkdir('output')
+def write_report(world, nodes_list, x):
+    dir= './output/'+ str(len(nodes_list))+"/"
+    path=dir+ world.blockchain +'_'+str(x)+'.json'
+    if not os.path.exists(dir):
+        os.mkdir(dir)
         with open(path, 'w') as f:
             pass
     with open(path, 'w') as f:
@@ -35,58 +37,138 @@ def report_node_chain(world, nodes_list):
         }
 
 
-def run_model():
-    now = int(time.time())  # Current time
-    duration = 3600  # seconds
+def get_nodes_by_address(nodes: list, addresses: list)->list:
+    nb = []
+    for node in nodes:
+        if node.address in addresses:
+            nb.append(node)
+    return nb
 
-    world = SimulationWorld(
-        duration,
-        now,
-        'input-parameters/config.json',
-        'input-parameters/latency.json',
-        'input-parameters/throughput-received.json',
-        'input-parameters/throughput-sent.json',
-        'input-parameters/delays.json')
 
-    # Create the network
-    network = Network(world.env, 'NetworkXPTO')
+def run_model():    
+    for n in [128]:
+        for x in range(30):              
+            now = 0#int(time.time())  # Current time
+            duration = 10000 #3200  # seconds
 
-    miners = {
-        'Ohio': {
-            'how_many': 0,
-            'mega_hashrate_range': "(20, 40)"
-        },
-        'Tokyo': {
-            'how_many': 2,
-            'mega_hashrate_range': "(20, 40)"
-        }
-    }
-    non_miners = {
-        'Tokyo': {
-            'how_many': 1
-        },
-        'Ireland': {
-            'how_many': 1
-        }
-    }
+            world = SimulationWorld(
+                duration,
+                now,
+                'input-parameters/config.json',
+                'input-parameters/latency.json',
+                'input-parameters/throughput-received.json',
+                'input-parameters/throughput-sent.json',
+                'input-parameters/delays.json')
+            
+            # Create the network
+            network = Network(world.env, 'Internet') #NetworkXPTO
 
-    node_factory = NodeFactory(world, network)
-    # Create all nodes
-    nodes_list = node_factory.create_nodes(miners, non_miners)
-    # Start the network heartbeat
-    world.env.process(network.start_heartbeat())
-    # Full Connect all nodes
-    for node in nodes_list:
-        node.connect(nodes_list)
+            if world.blockchain not in ['vcubechain', 'fabric']:
+                non_miners = {
+                    'Ohio': {
+                        'how_many': int(n/4),
+                        'mega_hashrate_range': "(20, 40)"
+                    },
+                    'Tokyo': {
+                        'how_many': int(n/4),
+                        'mega_hashrate_range': "(20, 40)"
+                    },
+                    'Ireland': {
+                        'how_many': int((n/2)-1),
+                        'mega_hashrate_range': "(20, 40)"
+                    }
+                }
+                miners = {
+                    'Ohio': {
+                        'how_many': 0,
+                        'mega_hashrate_range': "(20, 40)"
+                    },
+                    'Tokyo': {
+                        'how_many': 0,
+                        'mega_hashrate_range': "(20, 40)"
+                    },
+                    'Ireland': {
+                        'how_many': int(1),
+                        'mega_hashrate_range': "(20, 40)"
+                    }
+                }
+            else: #vcubechain and fabric
+                non_miners = {
+                    'Ohio': {
+                        'how_many': int(n/4),
+                        'mega_hashrate_range': "(20, 40)"
+                    },
+                    'Tokyo': {
+                        'how_many': int(n/4),
+                        'mega_hashrate_range': "(20, 40)"
+                    },
+                    'Ireland': {
+                        'how_many': int(n/2),
+                        'mega_hashrate_range': "(20, 40)"
+                    }
+                }
+                miners = {
+                    'Ohio': {
+                        'how_many': 0,
+                        'mega_hashrate_range': "(20, 40)"
+                    },
+                    'Ireland': {
+                        'how_many': 0,
+                        'mega_hashrate_range': "(20, 40)"
+                    }
+                }
+            node_factory = NodeFactory(world, network)
+            # Create all nodes
+            nodes_list = node_factory.create_nodes(miners, non_miners)
 
-    transaction_factory = TransactionFactory(world)
-    transaction_factory.broadcast(100, 400, 15, nodes_list)
+            dir= './output/'+ str(len(nodes_list))+"/"
+            path=dir+ world.blockchain +'_'+str(x)+'.json'
+            if not os.path.exists(dir):
+                os.mkdir(dir)
+            file_path = dir+world.blockchain+'_'+str(x)+'.txt'
+            sys.stdout = open(file_path, "w")
+            
+            print("Running n=",n)
 
-    world.start_simulation()
+            # Start the network heartbeat
+            world.env.process(network.start_heartbeat())
+            
+            
+            if world.blockchain != 'vcubechain':
+                # Full Connect all nodes - all2all
+                for node in nodes_list:
+                    node.connect(nodes_list)
+            else:
+                # Full Connect all nodes in the vcube    
+                for node in nodes_list:
+                    node.connect(get_nodes_by_address(nodes_list, node.vcube.neighbors()))
 
-    report_node_chain(world, nodes_list)
-    write_report(world)
+            transaction_factory = TransactionFactory(world)
+            transaction_factory.broadcast(1000, 1, 15, nodes_list) # x times; y transactions; every k seconds.
+
+            #for node in nodes_list:
+                #node.run() #start FD
+            world.start_simulation()
+
+
+            report_node_chain(world, nodes_list)
+            write_report(world, nodes_list, x)  
 
 
 if __name__ == '__main__':
+    #vcube = VCube(8)
+    #for s in range(3):
+    #    for p in vcube.cis(7,s): #process i, cluster s
+    #        print ('cis',p)
+    
+    #print('is correct?', vcube.is_correct(1))
+    #print('neighbor', vcube.neighbor(0,1))
+
+    #print('suspect',vcube.suspect(1))
+    #print('is correct?', vcube.is_correct(1))
+    #print('neighbor', vcube.neighbor(0,1))
+
+    #print('unsuspect',vcube.unsuspect(1))
+    #print('is correct?', vcube.is_correct(1))
+    #print('neighbor', vcube.neighbor(0,1))
     run_model()

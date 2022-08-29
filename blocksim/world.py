@@ -84,7 +84,9 @@ class SimulationWorld:
         used during the simulation"""
         blockchain_switcher = {
             'bitcoin': self._set_bitcoin_delays,
-            'ethereum': self._set_ethereum_delays
+            'ethereum': self._set_ethereum_delays,
+            'vcubechain': self._set_vcubechain_delays,
+            'fabric': self._set_fabric_delays
         }
         return blockchain_switcher.get(self.blockchain, lambda: "Invalid blockchain")()
 
@@ -101,6 +103,20 @@ class SimulationWorld:
             self._measured_delays['ethereum']['block_validation'],
             self._measured_delays['ethereum']['time_between_blocks_seconds'])
         self._env.delays = self._measured_delays['ethereum']
+
+    def _set_vcubechain_delays(self):
+        self._validate_distribution(
+            self._measured_delays['vcubechain']['tx_validation'],
+            self._measured_delays['vcubechain']['block_validation'],
+            self._measured_delays['vcubechain']['time_between_blocks_seconds'])
+        self._env.delays = self._measured_delays['vcubechain']
+    
+    def _set_fabric_delays(self):
+        self._validate_distribution(
+            self._measured_delays['fabric']['tx_validation'],
+            self._measured_delays['fabric']['block_validation'],
+            self._measured_delays['fabric']['time_between_blocks_seconds'])
+        self._env.delays = self._measured_delays['fabric']
 
     def _set_latencies(self):
         """Reads the file with the latencies measurements taken"""
